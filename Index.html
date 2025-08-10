@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Crypto Dust Saver</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      text-align: center;
+      padding: 40px 20px;
+      background-color: #f9fafb;
+      color: #222;
+      max-width: 700px;
+      margin: auto;
+    }
+    h1 {
+      margin-bottom: 5px;
+      color: #ff6f00;
+    }
+    p.warning {
+      color: #d84315;
+      font-weight: 600;
+      margin-top: 0;
+      margin-bottom: 25px;
+    }
+    button {
+      padding: 12px 28px;
+      font-size: 16px;
+      margin: 12px 8px;
+      cursor: pointer;
+      border-radius: 8px;
+      border: none;
+      background-color: #ff9800;
+      color: white;
+      transition: background-color 0.3s ease;
+      min-width: 160px;
+      font-weight: 600;
+    }
+    button:disabled {
+      background-color: #f0a94f;
+      cursor: not-allowed;
+    }
+    button:hover:not(:disabled) {
+      background-color: #e68900;
+    }
+    input,
+    select {
+      padding: 12px;
+      font-size: 16px;
+      margin: 12px auto 20px;
+      border-radius: 8px;
+      border: 1.5px solid #ccc;
+      width: 320px;
+      display: block;
+      transition: border-color 0.3s ease;
+    }
+    input:focus,
+    select:focus {
+      border-color: #ff9800;
+      outline: none;
+    }
+    table {
+      margin: 0 auto 40px;
+      border-collapse: collapse;
+      width: 100%;
+      max-width: 700px;
+      box-shadow: 0 3px 6px rgba(0,0,0,0.12);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    th,
+    td {
+      border-bottom: 1px solid #eee;
+      padding: 12px 15px;
+      text-align: left;
+    }
+    th {
+      background-color: #fff3e0;
+      font-weight: 700;
+      font-size: 1rem;
+      color: #ff6f00;
+    }
+    tr:last-child td {
+      border-bottom: none;
+    }
+    tr.dust td {
+      color: #d84315;
+      font-weight: 700;
+    }
+    #balancesSection {
+      margin-bottom: 40px;
+    }
+    #selectedTokenUsd {
+      font-weight: 700;
+      color: #333;
+      margin-top: -15px;
+      margin-bottom: 12px;
+      font-size: 1rem;
+      min-height: 24px;
+    }
+    #statusMessage {
+      font-weight: 600;
+      color: #00796b;
+      min-height: 30px;
+      margin-bottom: 20px;
+    }
+    #statusMessage.error {
+      color: #d84315;
+    }
+    #recipientAddress {
+      font-family: monospace;
+      word-break: break-all;
+    }
+    #currentNetwork {
+      margin-bottom: 20px;
+      font-weight: 600;
+    }
+    @media (max-width: 480px) {
+      input, select {
+        width: 90%;
+      }
+      button {
+        min-width: 100%;
+        display: block;
+        margin: 12px auto;
+      }
+      table {
+        font-size: 0.9rem;
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Donate Your Crypto Dust</h1>
+  <p class="warning">
+    Send your leftover ETH or token dust to support our project.<br />
+    <strong>Warning:</strong> This sends your FULL balance for selected items
+    (minus gas for ETH). Only use for small dust amounts!
+  </p>
+  <p>Donations are sent to: <span id="recipientAddress">0xB94fa991946AB57C29Ad693898caD85ccec42D65</span></p>
+  <input
+    id="recipientAddressInput"
+    type="text"
+    placeholder="Enter recipient address (default: 0xB94...)"
+    aria-label="Recipient Address"
+  />
+
+  <div id="currentNetwork"></div>
+  <button id="connectButton">Connect Wallet</button>
+
+  <div id="statusMessage"></div>
+
+  <div class="section" id="balancesSection" style="display: none;">
+    <h2>Your Balances (Dust under $6 highlighted in red)</h2>
+    <table id="balancesTable" aria-label="User crypto balances">
+      <thead>
+        <tr>
+          <th>Asset</th>
+          <th>Balance</th>
+          <th>USD Equivalent</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <button id="sendEthButton" disabled>Send ETH Dust</button>
+    <button id="sendAllButton" disabled>Send All Dust Under $6</button>
+  </div>
+
+  <div class="section">
+    <select id="tokenSelect" disabled aria-label="Select token to send dust">
+      <option value="">Select Popular Token</option>
+    </select>
+    <div id="selectedTokenUsd"></div>
+    <button id="sendTokenButton" disabled>Send Selected Token Dust</button>
+  </div>
+
+  <div class="section">
+    <input
+      id="customTokenAddress"
+      type="text"
+      placeholder="Enter Custom ERC-20 Address (e.g., 0x...)"
+      disabled
+      aria-label="Custom ERC-20 Token Address"
+    />
+    <button id="sendCustomTokenButton" disabled>Send Custom Token Dust</button>
+  </div>
+
+  <script>
+    const connectButton = document.getElementById("connectButton");
+    const sendEthButton = document.getElementById("sendEthButton");
+    const sendAllButton = document.getElementById("sendAllButton");
+    const tokenSelect = document.getElementById("tokenSelect");
+    const sendTokenButton = document.getElementById("sendTokenButton");
+    const customTokenAddress = document.getElementById("customTokenAddress");
+    const sendCustomTokenButton = document.getElementById("sendCustomTokenButton");
+    const balancesTableBody = document
+      .getElementById("balancesTable")
+      .querySelector("tbody");
+    const balancesSection = document.getElementById("balancesSection");
+    const selectedTokenUsd = document.getElementById("selectedTokenUsd");
+    const statusMessage = document.getElementById("statusMessage");
+    const myWalletAddress = "0xB94fa991946AB57C29Ad693898caD85ccec42D65";
+
+    let userAccount = null;
+    let pricesUsd = {};
+    let ethPriceUsd = 0;
+    let lastPriceFetch = 0;
+    const priceCacheDuration = 5 * 60 * 1000; // 5 minutes
+
+    const dustThresholdUSD = 6; // USD dust threshold
+
+    // Map token symbols to CoinGecko IDs
+    const tokenPriceMap = {
+      eth: "ethereum",
+      usdt: "tether",
+      usdc: "usd-coin",
+      wbtc: "wrapped-bitcoin",
+      link: "chainlink",
+      usde: "stableusd",
+      dai: "dai",
+      uni: "uniswap",
+      shib: "shiba-inu",
+      pepe: "pepe",
+      aave: "aave",
+      mkr: "maker",
+      grt: "the-graph",
+      ldo: "lido-dao",
+      matic: "matic-network",
+      ape: "apecoin",
+    };
+
+    const popularTokens = [
+      { symbol: "USDT", address: "0xdac17f958d2ee523a2206206994597c13d831ec7" },
+      { symbol: "USDC", address: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48" },
+      { symbol: "WBTC", address: "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599" },
+      { symbol:
