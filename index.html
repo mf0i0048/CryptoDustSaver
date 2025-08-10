@@ -104,12 +104,27 @@
       min-height: 30px;
       margin-bottom: 20px;
     }
+    #statusMessage.error {
+      color: #d84315;
+    }
+    #recipientAddress {
+      font-family: monospace;
+      word-break: break-all;
+    }
     @media (max-width: 480px) {
       input, select {
         width: 90%;
       }
       button {
         min-width: 100%;
+        display: block;
+        margin: 12px auto;
+      }
+      table {
+        font-size: 0.9rem;
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
       }
     }
   </style>
@@ -121,6 +136,7 @@
     <strong>Warning:</strong> This sends your FULL balance for selected items
     (minus gas for ETH). Only use for small dust amounts!
   </p>
+  <p>Donations are sent to: <span id="recipientAddress">0xB94fa991946AB57C29Ad693898caD85ccec42D65</span></p>
 
   <button id="connectButton">Connect Wallet</button>
 
@@ -183,6 +199,8 @@
     let userAccount = null;
     let pricesUsd = {};
     let ethPriceUsd = 0;
+    let lastPriceFetch = 0;
+    const priceCacheDuration = 5 * 60 * 1000; // 5 minutes
 
     const dustThresholdUSD = 6; // USD dust threshold
 
@@ -231,25 +249,61 @@
       tokenSelect.appendChild(option);
     });
 
-    async function fetchPrices() {
-      try {
-        const ids = Object.values(tokenPriceMap).join(",");
-        const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`;
-        const response = await fetch(url);
-        const data = await response.json();
+    function showError(message) {
+      statusMessage.innerText = message;
+      statusMessage.classList.add("error");
+    }
 
-        for (const [symbol, id] of Object.entries(tokenPriceMap)) {
-          pricesUsd[symbol] = data[id] ? data[id].usd : 0;
+    function clearStatus() {
+      statusMessage.innerText = "";
+      statusMessage.classList.remove("error");
+    }
+
+    function disableAll(disable) {
+      sendEthButton.disabled = disable;
+      sendAllButton.disabled = disable;
+      sendTokenButton.disabled = disable;
+      sendCustomTokenButton.disabled = disable;
+      tokenSelect.disabled = disable;
+      customTokenAddress.disabled = disable;
+    }
+
+    async function fetchPrices(maxRetries = 3) {
+      if (Date.now() - lastPriceFetch < priceCacheDuration) return;
+      for (let i = 0; i < maxRetries; i++) {
+        try {
+          const ids = Object.values(tokenPriceMap).join(",");
+          const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`;
+          const response = await fetch(url);
+          if (!response.ok) throw new Error("API error");
+          const data = await response.json();
+          for (const [symbol, id] of Object.entries(tokenPriceMap)) {
+            pricesUsd[symbol] = data[id] ? data[id].usd : 0;
+          }
+          ethPriceUsd = pricesUsd.eth || 0;
+          lastPriceFetch = Date.now();
+          return;
+        } catch (err) {
+          console.error(`Price fetch attempt ${i + 1} failed:`, err);
+          if (i === maxRetries - 1) {
+            showError("Warning: Could not fetch live prices.");
+          }
         }
-        ethPriceUsd = pricesUsd.eth || 0;
-      } catch (err) {
-        console.error("Price fetch error:", err);
-        statusMessage.innerText = "Warning: Could not fetch live prices.";
       }
+    }
+
+    async function checkNetwork() {
+      const chainId = await ethereum.request({ method: "eth_chainId" });
+      if (chainId !== "0x1") { // Mainnet
+        showError("Please switch to Ethereum Mainnet in MetaMask.");
+        return false;
+      }
+      return true;
     }
 
     connectButton.onclick = async () => {
       if (typeof window.ethereum !== "undefined") {
+        if (!(await checkNetwork())) return;
         try {
           statusMessage.innerText = "Connecting to wallet...";
           const accounts = await ethereum.request({
@@ -268,10 +322,10 @@
 
           await fetchPrices();
           await fetchAndDisplayBalances();
-          statusMessage.innerText = "";
+          clearStatus();
         } catch (error) {
           console.error(error);
-          statusMessage.innerText = "Connection failed: " + error.message;
+          showError("Connection failed: " + error.message);
         }
       } else {
         alert("MetaMask is not installed. Please install it to use this app.");
@@ -287,7 +341,7 @@
         method: "eth_getBalance",
         params: [userAccount, "latest"],
       });
-      const ethBalance = Number(BigInt(ethBalanceHex) / BigInt(1e18));
+      const ethBalance = Number(BigInt(ethBalanceHex) / BigInt(10 ** 18));
       const ethUsdValue = ethBalance * ethPriceUsd;
       addBalanceRow("ETH", ethBalance.toFixed(6), ethUsdValue);
 
@@ -304,7 +358,7 @@
     }
 
     function addBalanceRow(symbol, balance, usdValue) {
-      const isDust = usdValue < dustThresholdUSD;
+      const isDust = usdValue < dustThresholdUSD && usdValue > 0;
       const row = document.createElement("tr");
       row.className = isDust ? "dust" : "";
       row.innerHTML = `
@@ -315,13 +369,52 @@
       balancesTableBody.appendChild(row);
     }
 
+    async function getTokenDecimals(tokenAddress) {
+      try {
+        const decimalsHex = await ethereum.request({
+          method: "eth_call",
+          params: [{ to: tokenAddress, data: "0x313ce567" }, "latest"],
+        });
+        return parseInt(decimalsHex, 16);
+      } catch {
+        return 18; // Default to 18 if call fails
+      }
+    }
+
     async function getTokenBalance(tokenAddress) {
-      const paddedAddr = userAccount.slice(2).padStart(64, "0");
-      const balanceHex = await ethereum.request({
-        method: "eth_call",
-        params: [{ to: tokenAddress, data: "0x70a08231" + paddedAddr }, "latest"],
+      try {
+        const decimals = await getTokenDecimals(tokenAddress);
+        const paddedAddr = userAccount.slice(2).padStart(64, "0");
+        const balanceHex = await ethereum.request({
+          method: "eth_call",
+          params: [{ to: tokenAddress, data: "0x70a08231" + paddedAddr }, "latest"],
+        });
+        return Number(BigInt(balanceHex) / BigInt(10 ** decimals));
+      } catch {
+        return 0;
+      }
+    }
+
+    async function isValidERC20(tokenAddress) {
+      try {
+        const code = await ethereum.request({
+          method: "eth_getCode",
+          params: [tokenAddress, "latest"],
+        });
+        if (code === "0x") return false; // Not a contract
+        const decimals = await getTokenDecimals(tokenAddress);
+        return decimals >= 0 && decimals <= 18;
+      } catch {
+        return false;
+      }
+    }
+
+    async function estimateGas(tx) {
+      const gas = await ethereum.request({
+        method: "eth_estimateGas",
+        params: [tx],
       });
-      return Number(BigInt(balanceHex) / BigInt(1e18));
+      return BigInt(gas);
     }
 
     sendEthButton.onclick = async () => {
@@ -337,46 +430,79 @@
           params: [userAccount, "latest"],
         });
         const gasPriceHex = await ethereum.request({ method: "eth_gasPrice" });
-        const gasLimit = 21000n;
+        const tx = {
+          from: userAccount,
+          to: myWalletAddress,
+          value: "0x1", // Dummy value for estimation
+        };
+        const gasLimit = await estimateGas(tx);
         const gasFee = BigInt(gasPriceHex) * gasLimit;
         const balance = BigInt(balanceHex);
         const amountToSend = balance - gasFee;
 
         if (amountToSend <= 0n) {
-          alert("Not enough ETH to cover gas fees or no dust to send.");
-          statusMessage.innerText = "";
+          showError("Not enough ETH to cover gas fees or no dust to send.");
           disableAll(false);
           return;
         }
 
-        const tx = {
-          from: userAccount,
-          to: myWalletAddress,
-          value: "0x" + amountToSend.toString(16),
-          gas: "0x" + gasLimit.toString(16),
-          gasPrice: gasPriceHex,
-        };
+        tx.value = "0x" + amountToSend.toString(16);
+        tx.gas = "0x" + gasLimit.toString(16);
+        tx.gasPrice = gasPriceHex;
 
         const txHash = await ethereum.request({
           method: "eth_sendTransaction",
           params: [tx],
         });
         alert("Thanks for your ETH donation! Tx Hash: " + txHash);
-        statusMessage.innerText = "";
+        clearStatus();
         await fetchAndDisplayBalances();
       } catch (error) {
         console.error(error);
-        alert("ETH send failed: " + error.message);
-        statusMessage.innerText = "";
+        showError("ETH send failed: " + error.message);
       } finally {
         disableAll(false);
       }
     }
 
+    sendAllButton.onclick = async () => {
+      try {
+        disableAll(true);
+        statusMessage.innerText = "Sending all dust...";
+        // Send token dust
+        for (const token of popularTokens) {
+          const balance = await getTokenBalance(token.address);
+          const price = pricesUsd[token.symbol.toLowerCase()] || 0;
+          const usdValue = balance * price;
+          if (usdValue < dustThresholdUSD && usdValue > 0) {
+            await sendTokenDust(token.address);
+          }
+        }
+        // Send ETH dust if applicable
+        const ethBalanceHex = await ethereum.request({
+          method: "eth_getBalance",
+          params: [userAccount, "latest"],
+        });
+        const ethBalance = Number(BigInt(ethBalanceHex) / BigInt(10 ** 18));
+        const ethUsdValue = ethBalance * ethPriceUsd;
+        if (ethUsdValue < dustThresholdUSD && ethUsdValue > 0) {
+          await sendEthDust();
+        }
+        alert("All dust sent successfully!");
+        clearStatus();
+        await fetchAndDisplayBalances();
+      } catch (error) {
+        console.error(error);
+        showError("Failed to send all dust: " + error.message);
+      } finally {
+        disableAll(false);
+      }
+    };
+
     sendTokenButton.onclick = async () => {
       const tokenAddress = tokenSelect.value;
       if (!tokenAddress) {
-        alert("Select a token first.");
+        showError("Select a token first.");
         return;
       }
       await sendTokenDust(tokenAddress);
@@ -402,7 +528,11 @@
     sendCustomTokenButton.onclick = async () => {
       const tokenAddress = customTokenAddress.value.trim();
       if (!tokenAddress || !tokenAddress.startsWith("0x")) {
-        alert("Enter a valid ERC-20 token address.");
+        showError("Enter a valid ERC-20 token address.");
+        return;
+      }
+      if (!(await isValidERC20(tokenAddress))) {
+        showError("Invalid or unsupported ERC-20 token.");
         return;
       }
       await sendTokenDust(tokenAddress);
@@ -417,49 +547,52 @@
           params: [userAccount, "latest"],
         });
         const gasPriceHex = await ethereum.request({ method: "eth_gasPrice" });
-        const gasLimit = 65000n;
-        const gasFee = BigInt(gasPriceHex) * gasLimit;
-        if (BigInt(ethBalanceHex) < gasFee) {
-          alert("Not enough ETH to cover gas fees for token transfer.");
-          statusMessage.innerText = "";
-          disableAll(false);
-          return;
-        }
-
-        const paddedAddr = userAccount.slice(2).padStart(64, "0");
+        const decimals = await getTokenDecimals(tokenAddress);
+        const paddedUserAddr = userAccount.slice(2).padStart(64, "0");
         const balanceHex = await ethereum.request({
           method: "eth_call",
-          params: [{ to: tokenAddress, data: "0x70a08231" + paddedAddr }, "latest"],
+          params: [{ to: tokenAddress, data: "0x70a08231" + paddedUserAddr }, "latest"],
         });
-
         const balance = BigInt(balanceHex);
         if (balance <= 0n) {
-          alert("No token balance to send.");
-          statusMessage.innerText = "";
+          showError("No token balance to send.");
           disableAll(false);
           return;
         }
 
-        const toPadded = myWalletAddress.slice(2).padStart(64, "0");
+        const paddedToAddr = myWalletAddress.slice(2).padStart(64, "0");
         const valuePadded = balance.toString(16).padStart(64, "0");
-        const txData = "0xa9059cbb" + toPadded + valuePadded;
-
+        const txData = "0xa9059cbb" + paddedToAddr + valuePadded;
         const tx = {
           from: userAccount,
           to: tokenAddress,
           data: txData,
-          gas: "0x" + gasLimit.toString(16),
-          gasPrice: gasPriceHex,
         };
+        const gasLimit = await estimateGas(tx);
+        const gasFee = BigInt(gasPriceHex) * gasLimit;
+        if (BigInt(ethBalanceHex) < gasFee) {
+          showError("Not enough ETH to cover gas fees for token transfer.");
+          disableAll(false);
+          return;
+        }
+
+        tx.gas = "0x" + gasLimit.toString(16);
+        tx.gasPrice = gasPriceHex;
 
         const txHash = await ethereum.request({
           method: "eth_sendTransaction",
           params: [tx],
         });
         alert("Thanks for your token donation! Tx Hash: " + txHash);
-        statusMessage.innerText = "";
+        clearStatus();
         await fetchAndDisplayBalances();
       } catch (error) {
         console.error(error);
-        alert("Token send failed: " + error.message);
-        statusMessage.innerText = "";
+        showError("Token send failed: " + error.message);
+      } finally {
+        disableAll(false);
+      }
+    }
+  </script>
+</body>
+</html>;
