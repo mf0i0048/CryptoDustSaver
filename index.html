@@ -1,76 +1,139 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Crypto Dust Saver</title>
   <style>
     body {
-      font-family: Arial, sans-serif;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       text-align: center;
-      padding: 50px;
-      background-color: #f0f2f5;
+      padding: 40px 20px;
+      background-color: #f9fafb;
+      color: #222;
+      max-width: 700px;
+      margin: auto;
+    }
+    h1 {
+      margin-bottom: 5px;
+      color: #ff6f00;
+    }
+    p.warning {
+      color: #d84315;
+      font-weight: 600;
+      margin-top: 0;
+      margin-bottom: 25px;
     }
     button {
-      padding: 10px 20px;
+      padding: 12px 28px;
       font-size: 16px;
-      margin: 10px;
+      margin: 12px 8px;
       cursor: pointer;
       border-radius: 8px;
       border: none;
       background-color: #ff9800;
       color: white;
+      transition: background-color 0.3s ease;
+      min-width: 160px;
+      font-weight: 600;
     }
-    button:hover {
+    button:disabled {
+      background-color: #f0a94f;
+      cursor: not-allowed;
+    }
+    button:hover:not(:disabled) {
       background-color: #e68900;
     }
-    input, select {
-      padding: 10px;
+    input,
+    select {
+      padding: 12px;
       font-size: 16px;
-      margin: 10px;
+      margin: 12px auto 20px;
       border-radius: 8px;
-      border: 1px solid #ccc;
-      width: 300px;
+      border: 1.5px solid #ccc;
+      width: 320px;
+      display: block;
+      transition: border-color 0.3s ease;
+    }
+    input:focus,
+    select:focus {
+      border-color: #ff9800;
+      outline: none;
     }
     table {
-      margin: 20px auto;
+      margin: 0 auto 40px;
       border-collapse: collapse;
-      width: 80%;
+      width: 100%;
+      max-width: 700px;
+      box-shadow: 0 3px 6px rgba(0,0,0,0.12);
+      border-radius: 10px;
+      overflow: hidden;
     }
-    th, td {
-      border: 1px solid #ddd;
-      padding: 8px;
+    th,
+    td {
+      border-bottom: 1px solid #eee;
+      padding: 12px 15px;
       text-align: left;
     }
     th {
-      background-color: #f2f2f2;
+      background-color: #fff3e0;
+      font-weight: 700;
+      font-size: 1rem;
+      color: #ff6f00;
     }
-    .dust {
-      color: red;
-      font-weight: bold;
+    tr:last-child td {
+      border-bottom: none;
     }
-    .section {
-      margin-top: 20px;
+    tr.dust td {
+      color: #d84315;
+      font-weight: 700;
     }
-    #promotion {
-      margin-top: 50px;
-      font-size: 14px;
-      color: #555;
+    #balancesSection {
+      margin-bottom: 40px;
+    }
+    #selectedTokenUsd {
+      font-weight: 700;
+      color: #333;
+      margin-top: -15px;
+      margin-bottom: 12px;
+      font-size: 1rem;
+      min-height: 24px;
+    }
+    #statusMessage {
+      font-weight: 600;
+      color: #00796b;
+      min-height: 30px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 480px) {
+      input, select {
+        width: 90%;
+      }
+      button {
+        min-width: 100%;
+      }
     }
   </style>
 </head>
 <body>
   <h1>Donate Your Crypto Dust</h1>
-  <p>Send your leftover ETH or token dust to support our project. <strong>Warning:</strong> This sends your FULL balance for selected items (minus gas for ETH). Only use for small dust amounts!</p>
+  <p class="warning">
+    Send your leftover ETH or token dust to support our project.<br />
+    <strong>Warning:</strong> This sends your FULL balance for selected items
+    (minus gas for ETH). Only use for small dust amounts!
+  </p>
 
   <button id="connectButton">Connect Wallet</button>
 
-  <div class="section" id="balancesSection" style="display:none;">
-    <h2>Your Balances (Dust Highlighted in Red)</h2>
-    <table id="balancesTable">
+  <div id="statusMessage"></div>
+
+  <div class="section" id="balancesSection" style="display: none;">
+    <h2>Your Balances (Dust under $6 highlighted in red)</h2>
+    <table id="balancesTable" aria-label="User crypto balances">
       <thead>
         <tr>
           <th>Asset</th>
           <th>Balance</th>
+          <th>USD Equivalent</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -79,84 +142,136 @@
 
   <div class="section">
     <button id="sendEthButton" disabled>Send ETH Dust</button>
-    <button id="sendAllButton" disabled>Send All Dust</button>
+    <button id="sendAllButton" disabled>Send All Dust Under $6</button>
   </div>
 
   <div class="section">
-    <select id="tokenSelect" disabled>
+    <select id="tokenSelect" disabled aria-label="Select token to send dust">
       <option value="">Select Popular Token</option>
-      <!-- Popular tokens will be added here -->
     </select>
+    <div id="selectedTokenUsd"></div>
     <button id="sendTokenButton" disabled>Send Selected Token Dust</button>
   </div>
 
   <div class="section">
-    <input id="customTokenAddress" type="text" placeholder="Enter Custom ERC-20 Address (e.g., 0x...)" disabled>
+    <input
+      id="customTokenAddress"
+      type="text"
+      placeholder="Enter Custom ERC-20 Address (e.g., 0x...)"
+      disabled
+      aria-label="Custom ERC-20 Token Address"
+    />
     <button id="sendCustomTokenButton" disabled>Send Custom Token Dust</button>
   </div>
 
-  <div id="promotion">
-    <h2>Tips to Make This App Make You Rich</h2>
-    <p>Promote on X/Twitter with hashtags like #CryptoDust #DonateDust, Reddit (r/cryptocurrency), Discord crypto servers. Offer "clean wallet" as a service. Track your wallet on Etherscan. If you collect enough, reinvest in ads or build a community token!</p>
-  </div>
-
   <script>
-    const connectButton = document.getElementById('connectButton');
-    const sendEthButton = document.getElementById('sendEthButton');
-    const sendAllButton = document.getElementById('sendAllButton');
-    const tokenSelect = document.getElementById('tokenSelect');
-    const sendTokenButton = document.getElementById('sendTokenButton');
-    const customTokenAddress = document.getElementById('customTokenAddress');
-    const sendCustomTokenButton = document.getElementById('sendCustomTokenButton');
-    const balancesTableBody = document.getElementById('balancesTable').querySelector('tbody');
-    const balancesSection = document.getElementById('balancesSection');
+    const connectButton = document.getElementById("connectButton");
+    const sendEthButton = document.getElementById("sendEthButton");
+    const sendAllButton = document.getElementById("sendAllButton");
+    const tokenSelect = document.getElementById("tokenSelect");
+    const sendTokenButton = document.getElementById("sendTokenButton");
+    const customTokenAddress = document.getElementById("customTokenAddress");
+    const sendCustomTokenButton = document.getElementById("sendCustomTokenButton");
+    const balancesTableBody = document
+      .getElementById("balancesTable")
+      .querySelector("tbody");
+    const balancesSection = document.getElementById("balancesSection");
+    const selectedTokenUsd = document.getElementById("selectedTokenUsd");
+    const statusMessage = document.getElementById("statusMessage");
     const myWalletAddress = "0x049aCbb1951Af2Fa71705B250a589Db20b9099aA";
 
     let userAccount = null;
+    let pricesUsd = {};
+    let ethPriceUsd = 0;
 
-    // Top ERC-20 tokens: symbol, address (from Etherscan/CoinGecko data)
+    const dustThresholdUSD = 6; // USD dust threshold
+
+    // Map token symbols to CoinGecko IDs
+    const tokenPriceMap = {
+      eth: "ethereum",
+      usdt: "tether",
+      usdc: "usd-coin",
+      wbtc: "wrapped-bitcoin",
+      link: "chainlink",
+      usde: "stableusd",
+      dai: "dai",
+      uni: "uniswap",
+      shib: "shiba-inu",
+      pepe: "pepe",
+      aave: "aave",
+      mkr: "maker",
+      grt: "the-graph",
+      ldo: "lido-dao",
+      matic: "matic-network",
+      ape: "apecoin",
+    };
+
     const popularTokens = [
-      { symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7' },
-      { symbol: 'USDC', address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48' },
-      { symbol: 'WBTC', address: '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599' },
-      { symbol: 'LINK', address: '0x514910771af9ca656af840dff83e8264ecf986ca' },
-      { symbol: 'USDe', address: '0x4c9edd5852cd905f086c759e8383e09bff1e68b3' },
-      { symbol: 'DAI', address: '0x6b175474e89094c44da98b954eedeac495271d0f' }, // Common dust
-      { symbol: 'UNI', address: '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984' },
-      { symbol: 'SHIB', address: '0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce' }, // From other sources
-      { symbol: 'PEPE', address: '0x6982508145454ce325ddbeb138e4e3d49a8720c0' }, // Popular meme
-      { symbol: 'AAVE', address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9' },
-      { symbol: 'MKR', address: '0x9f8f72aa9304c8b593d555f12ef6589cc3a579a2' },
-      { symbol: 'GRT', address: '0xc944e90c64b2c07662a292be6244bdf05cda44a7' },
-      { symbol: 'LDO', address: '0x5a98fcbea516cf06857215779fd812ca3bef1b32' },
-      { symbol: 'MATIC', address: '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0' }, // ERC-20 version
-      { symbol: 'APE', address: '0x4d224452801aced8b2f0aebe155379bb5d594381' }
+      { symbol: "USDT", address: "0xdac17f958d2ee523a2206206994597c13d831ec7" },
+      { symbol: "USDC", address: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48" },
+      { symbol: "WBTC", address: "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599" },
+      { symbol: "LINK", address: "0x514910771af9ca656af840dff83e8264ecf986ca" },
+      { symbol: "USDe", address: "0x4c9edd5852cd905f086c759e8383e09bff1e68b3" },
+      { symbol: "DAI", address: "0x6b175474e89094c44da98b954eedeac495271d0f" },
+      { symbol: "UNI", address: "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984" },
+      { symbol: "SHIB", address: "0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce" },
+      { symbol: "PEPE", address: "0x6982508145454ce325ddbeb138e4e3d49a8720c0" },
+      { symbol: "AAVE", address: "0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9" },
+      { symbol: "MKR", address: "0x9f8f72aa9304c8b593d555f12ef6589cc3a579a2" },
+      { symbol: "GRT", address: "0xc944e90c64b2c07662a292be6244bdf05cda44a7" },
+      { symbol: "LDO", address: "0x5a98fcbea516cf06857215779fd812ca3bef1b32" },
+      { symbol: "MATIC", address: "0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0" },
+      { symbol: "APE", address: "0x4d224452801aced8b2f0aebe155379bb5d594381" },
     ];
 
-    // Populate dropdown
-    popularTokens.forEach(token => {
-      const option = document.createElement('option');
+    popularTokens.forEach((token) => {
+      const option = document.createElement("option");
       option.value = token.address;
       option.textContent = token.symbol;
       tokenSelect.appendChild(option);
     });
 
+    async function fetchPrices() {
+      try {
+        const ids = Object.values(tokenPriceMap).join(",");
+        const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`;
+        const response = await fetch(url);
+        const data = await response.json();
+
+        for (const [symbol, id] of Object.entries(tokenPriceMap)) {
+          pricesUsd[symbol] = data[id] ? data[id].usd : 0;
+        }
+        ethPriceUsd = pricesUsd.eth || 0;
+      } catch (err) {
+        console.error("Price fetch error:", err);
+        statusMessage.innerText = "Warning: Could not fetch live prices.";
+      }
+    }
+
     connectButton.onclick = async () => {
       if (typeof window.ethereum !== "undefined") {
         try {
-          const accounts = await ethereum.request({ method: "eth_requestAccounts" });
+          statusMessage.innerText = "Connecting to wallet...";
+          const accounts = await ethereum.request({
+            method: "eth_requestAccounts",
+          });
           userAccount = accounts[0];
           connectButton.innerText = "Wallet Connected";
+          connectButton.disabled = true;
+
           sendEthButton.disabled = false;
           sendAllButton.disabled = false;
           tokenSelect.disabled = false;
           sendTokenButton.disabled = false;
           customTokenAddress.disabled = false;
           sendCustomTokenButton.disabled = false;
+
+          await fetchPrices();
           await fetchAndDisplayBalances();
+          statusMessage.innerText = "";
         } catch (error) {
           console.error(error);
-          alert("Connection failed: " + error.message);
+          statusMessage.innerText = "Connection failed: " + error.message;
         }
       } else {
         alert("MetaMask is not installed. Please install it to use this app.");
@@ -164,149 +279,187 @@
     };
 
     async function fetchAndDisplayBalances() {
-      balancesTableBody.innerHTML = '';
-      balancesSection.style.display = 'block';
+      balancesTableBody.innerHTML = "";
+      balancesSection.style.display = "block";
 
-      // Fetch ETH balance
-      const ethBalanceHex = await ethereum.request({ method: 'eth_getBalance', params: [userAccount, 'latest'] });
-      const ethBalance = Number(BigInt(ethBalanceHex) / BigInt(1e18)).toFixed(6);
-      addBalanceRow('ETH', ethBalance, true); // ETH always shown if >0
+      // ETH balance
+      const ethBalanceHex = await ethereum.request({
+        method: "eth_getBalance",
+        params: [userAccount, "latest"],
+      });
+      const ethBalance = Number(BigInt(ethBalanceHex) / BigInt(1e18));
+      const ethUsdValue = ethBalance * ethPriceUsd;
+      addBalanceRow("ETH", ethBalance.toFixed(6), ethUsdValue);
 
-      // Fetch token balances
+      // Tokens
       for (const token of popularTokens) {
         const balance = await getTokenBalance(token.address);
         if (balance > 0) {
-          addBalanceRow(token.symbol, balance.toFixed(6));
+          const symbolLower = token.symbol.toLowerCase();
+          const price = pricesUsd[symbolLower] || 0;
+          const usdValue = balance * price;
+          addBalanceRow(token.symbol, balance.toFixed(6), usdValue);
         }
       }
     }
 
-    function addBalanceRow(symbol, balance, isEth = false) {
-      const row = document.createElement('tr');
-      const isDust = parseFloat(balance) < 0.01; // Arbitrary dust threshold
+    function addBalanceRow(symbol, balance, usdValue) {
+      const isDust = usdValue < dustThresholdUSD;
+      const row = document.createElement("tr");
+      row.className = isDust ? "dust" : "";
       row.innerHTML = `
         <td>${symbol}</td>
-        <td class="${isDust ? 'dust' : ''}">${balance}</td>
+        <td>${balance}</td>
+        <td>$${usdValue.toFixed(2)}</td>
       `;
       balancesTableBody.appendChild(row);
     }
 
     async function getTokenBalance(tokenAddress) {
-      const paddedAddr = userAccount.slice(2).padStart(64, '0');
+      const paddedAddr = userAccount.slice(2).padStart(64, "0");
       const balanceHex = await ethereum.request({
-        method: 'eth_call',
-        params: [{ to: tokenAddress, data: '0x70a08231' + paddedAddr }, 'latest'],
+        method: "eth_call",
+        params: [{ to: tokenAddress, data: "0x70a08231" + paddedAddr }, "latest"],
       });
-      return Number(BigInt(balanceHex) / BigInt(1e18)); // Assume 18 decimals for simplicity; adjust if needed
+      return Number(BigInt(balanceHex) / BigInt(1e18));
     }
 
     sendEthButton.onclick = async () => {
-      if (!userAccount) return alert("Connect wallet first.");
       await sendEthDust();
     };
 
     async function sendEthDust() {
       try {
-        const balanceHex = await ethereum.request({ method: 'eth_getBalance', params: [userAccount, 'latest'] });
-        const gasPriceHex = await ethereum.request({ method: 'eth_gasPrice' });
+        disableAll(true);
+        statusMessage.innerText = "Sending ETH dust...";
+        const balanceHex = await ethereum.request({
+          method: "eth_getBalance",
+          params: [userAccount, "latest"],
+        });
+        const gasPriceHex = await ethereum.request({ method: "eth_gasPrice" });
         const gasLimit = 21000n;
         const gasFee = BigInt(gasPriceHex) * gasLimit;
         const balance = BigInt(balanceHex);
         const amountToSend = balance - gasFee;
 
         if (amountToSend <= 0n) {
-          return alert("Not enough ETH to cover gas fees or no dust to send.");
+          alert("Not enough ETH to cover gas fees or no dust to send.");
+          statusMessage.innerText = "";
+          disableAll(false);
+          return;
         }
 
         const tx = {
           from: userAccount,
           to: myWalletAddress,
-          value: '0x' + amountToSend.toString(16),
-          gas: '0x' + gasLimit.toString(16),
+          value: "0x" + amountToSend.toString(16),
+          gas: "0x" + gasLimit.toString(16),
           gasPrice: gasPriceHex,
         };
 
-        const txHash = await ethereum.request({ method: "eth_sendTransaction", params: [tx] });
+        const txHash = await ethereum.request({
+          method: "eth_sendTransaction",
+          params: [tx],
+        });
         alert("Thanks for your ETH donation! Tx Hash: " + txHash);
-        await fetchAndDisplayBalances(); // Refresh
+        statusMessage.innerText = "";
+        await fetchAndDisplayBalances();
       } catch (error) {
         console.error(error);
         alert("ETH send failed: " + error.message);
+        statusMessage.innerText = "";
+      } finally {
+        disableAll(false);
       }
     }
 
     sendTokenButton.onclick = async () => {
       const tokenAddress = tokenSelect.value;
-      if (!tokenAddress) return alert("Select a token first.");
+      if (!tokenAddress) {
+        alert("Select a token first.");
+        return;
+      }
       await sendTokenDust(tokenAddress);
+    };
+
+    tokenSelect.onchange = async () => {
+      const tokenAddress = tokenSelect.value;
+      if (!tokenAddress) {
+        selectedTokenUsd.innerText = "";
+        return;
+      }
+      const token = popularTokens.find((t) => t.address === tokenAddress);
+      if (!token) {
+        selectedTokenUsd.innerText = "";
+        return;
+      }
+      const balance = await getTokenBalance(token.address);
+      const price = pricesUsd[token.symbol.toLowerCase()] || 0;
+      const usdValue = balance * price;
+      selectedTokenUsd.innerText = `Current balance is approx $${usdValue.toFixed(2)} USD`;
     };
 
     sendCustomTokenButton.onclick = async () => {
       const tokenAddress = customTokenAddress.value.trim();
-      if (!tokenAddress || !tokenAddress.startsWith('0x')) return alert("Enter a valid ERC-20 token address.");
+      if (!tokenAddress || !tokenAddress.startsWith("0x")) {
+        alert("Enter a valid ERC-20 token address.");
+        return;
+      }
       await sendTokenDust(tokenAddress);
     };
 
     async function sendTokenDust(tokenAddress) {
       try {
-        // Check ETH for gas
-        const ethBalanceHex = await ethereum.request({ method: 'eth_getBalance', params: [userAccount, 'latest'] });
-        const gasPriceHex = await ethereum.request({ method: 'eth_gasPrice' });
-        const gasLimit = 65000n; // Approx for ERC-20 transfer
+        disableAll(true);
+        statusMessage.innerText = "Sending token dust...";
+        const ethBalanceHex = await ethereum.request({
+          method: "eth_getBalance",
+          params: [userAccount, "latest"],
+        });
+        const gasPriceHex = await ethereum.request({ method: "eth_gasPrice" });
+        const gasLimit = 65000n;
         const gasFee = BigInt(gasPriceHex) * gasLimit;
         if (BigInt(ethBalanceHex) < gasFee) {
-          return alert("Not enough ETH to cover gas fees for token transfer.");
+          alert("Not enough ETH to cover gas fees for token transfer.");
+          statusMessage.innerText = "";
+          disableAll(false);
+          return;
         }
 
-        const paddedAddr = userAccount.slice(2).padStart(64, '0');
+        const paddedAddr = userAccount.slice(2).padStart(64, "0");
         const balanceHex = await ethereum.request({
-          method: 'eth_call',
-          params: [{ to: tokenAddress, data: '0x70a08231' + paddedAddr }, 'latest'],
+          method: "eth_call",
+          params: [{ to: tokenAddress, data: "0x70a08231" + paddedAddr }, "latest"],
         });
 
         const balance = BigInt(balanceHex);
         if (balance <= 0n) {
-          return alert("No token balance to send.");
+          alert("No token balance to send.");
+          statusMessage.innerText = "";
+          disableAll(false);
+          return;
         }
 
-        const toPadded = myWalletAddress.slice(2).padStart(64, '0');
-        const valuePadded = balance.toString(16).padStart(64, '0');
-        const txData = '0xa9059cbb' + toPadded + valuePadded;
+        const toPadded = myWalletAddress.slice(2).padStart(64, "0");
+        const valuePadded = balance.toString(16).padStart(64, "0");
+        const txData = "0xa9059cbb" + toPadded + valuePadded;
 
         const tx = {
           from: userAccount,
           to: tokenAddress,
           data: txData,
-          gas: '0x' + gasLimit.toString(16),
+          gas: "0x" + gasLimit.toString(16),
           gasPrice: gasPriceHex,
         };
 
-        const txHash = await ethereum.request({ method: "eth_sendTransaction", params: [tx] });
+        const txHash = await ethereum.request({
+          method: "eth_sendTransaction",
+          params: [tx],
+        });
         alert("Thanks for your token donation! Tx Hash: " + txHash);
-        await fetchAndDisplayBalances(); // Refresh
+        statusMessage.innerText = "";
+        await fetchAndDisplayBalances();
       } catch (error) {
         console.error(error);
         alert("Token send failed: " + error.message);
-      }
-    }
-
-    sendAllButton.onclick = async () => {
-      if (!confirm("This will send ALL detected dust (ETH + tokens) in sequence. Confirm each tx in MetaMask. Continue?")) return;
-
-      // Send ETH first
-      await sendEthDust();
-
-      // Send tokens
-      for (const token of popularTokens) {
-        const balance = await getTokenBalance(token.address);
-        if (balance > 0) {
-          await sendTokenDust(token.address);
-        }
-      }
-
-      alert("All dust sent! Thanks!");
-      await fetchAndDisplayBalances();
-    };
-  </script>
-</body>
-</html>
+        statusMessage.innerText = "";
