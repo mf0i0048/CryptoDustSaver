@@ -119,7 +119,7 @@
 
 <h1>Multi-Chain Crypto Dust Collector</h1>
 <p class="warning">
-  Send your leftover native coin & token dust (under $6 USD) from popular chains.
+  Send your leftover native coin & token dust (under $50 USD) from popular chains.
 </p>
 
 <input id="recipientInput" type="text" placeholder="Enter recipient address" aria-label="Recipient wallet address"/>
@@ -130,7 +130,7 @@
 <div id="statusMessage"></div>
 
 <section id="balancesSection" style="display:none;">
-  <h2>Your Dust Balances (Under $6 USD Highlighted in Red)</h2>
+  <h2>Your Dust Balances (Under $50 USD Highlighted in Red)</h2>
   <table aria-label="User balances table" id="balancesTable">
     <thead>
       <tr><th>Asset</th><th>Balance</th><th>USD Value</th><th>Action</th></tr>
@@ -152,7 +152,7 @@
   const sendAllDustBtn = document.getElementById("sendAllDustBtn");
 
   // USD Dust threshold
-  const DUST_THRESHOLD_USD = 6;
+  const DUST_THRESHOLD_USD = 50;
 
   // Supported Chains and tokens (EVM chains only)
   const chains = {
@@ -234,13 +234,24 @@
         {symbol: "USDC", address:"0x7F5c764cBc14f9669B88837ca1490cCa17c31607", decimals:6, coingeckoId:"usd-coin"},
       ],
     },
+    11155111: {
+      name: "Sepolia Testnet",
+      rpc: "https://rpc.ankr.com/eth_sepolia",
+      nativeSymbol: "ETH",
+      coingeckoId: "ethereum",
+      tokens: [
+        // Placeholder testnet token addresses; replace with actual Sepolia testnet tokens
+        {symbol: "USDT", address:"0x7169D38820F6dC4F1aB5A5Ce27899B6a83d34f72", decimals:6, coingeckoId:"tether"},
+        {symbol: "USDC", address:"0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", decimals:6, coingeckoId:"usd-coin"},
+      ],
+    },
   };
 
   let provider;
   let signer;
   let userAddress;
   let currentChainId;
-  let tokenPricesUsd = {};  // key: coingeckoId, value: price in USD
+  let tokenPricesUsd = {}; // key: coingeckoId, value: price in USD
   let dustTokens = []; // list of tokens + native with balance < threshold
   let priceCache = { timestamp: 0, data: {} };
 
@@ -288,10 +299,10 @@
       currentChainId = (await provider.getNetwork()).chainId;
 
       if (!chains[currentChainId]) {
-        setStatus("Please switch to a supported chain (e.g., Ethereum, Polygon).", true);
+        setStatus("Please switch to a supported chain (e.g., Ethereum, Polygon, Sepolia).", true);
         try {
-          await provider.send("wallet_switchEthereumChain", [{ chainId: "0x1" }]); // Switch to Ethereum
-          currentChainId = 1;
+          await provider.send("wallet_switchEthereumChain", [{ chainId: "0xaa36a7" }]); // Switch to Sepolia
+          currentChainId = 11155111;
         } catch (e) {
           setStatus("Failed to switch chain: " + e.message, true);
           return false;
@@ -328,7 +339,18 @@
   // Fetch prices from CoinGecko for native coin + tokens on this chain
   async function fetchPrices() {
     const chain = chains[currentChainId];
-    if(!chain) return;
+    if (!chain) return;
+
+    // Mock prices for Sepolia testnet
+    if (currentChainId === 11155111) {
+      tokenPricesUsd = {
+        "ethereum": { usd: 1 }, // Mock 1 ETH = $1 for testing
+        "tether": { usd: 1 },
+        "usd-coin": { usd: 1 },
+      };
+      priceCache = { timestamp: Date.now(), data: tokenPricesUsd };
+      return;
+    }
 
     const now = Date.now();
     if (now - priceCache.timestamp < 5 * 60 * 1000) {
@@ -337,16 +359,16 @@
     }
 
     const ids = new Set();
-    if(chain.coingeckoId) ids.add(chain.coingeckoId);
+    if (chain.coingeckoId) ids.add(chain.coingeckoId);
     chain.tokens.forEach(t => ids.add(t.coingeckoId));
     const url = `https://api.coingecko.com/api/v3/simple/price?ids=${[...ids].join(",")}&vs_currencies=usd`;
     try {
       const resp = await fetch(url);
-      if(!resp.ok) throw new Error("Price fetch failed");
+      if (!resp.ok) throw new Error("Price fetch failed");
       const json = await resp.json();
       tokenPricesUsd = json;
       priceCache = { timestamp: now, data: json };
-    } catch(e) {
+    } catch (e) {
       setStatus("Failed to fetch prices: " + e.message, true);
     }
   }
@@ -354,8 +376,7 @@
   // Get token balance with decimals applied
   async function getTokenBalance(token) {
     try {
-      if(token.address === "0x0000000000000000000000000000000000000000") {
-        // Native token: use provider.getBalance
+      if (token.address === "0x0000000000000000000000000000000000000000") {
         const bal = await provider.getBalance(userAddress);
         return Number(ethers.utils.formatUnits(bal, 18));
       } else {
@@ -378,12 +399,11 @@
     dustTokens = [];
 
     const chain = chains[currentChainId];
-    if(!chain) {
+    if (!chain) {
       setStatus("Unsupported chain: " + currentChainId, true);
       return;
     }
 
-    // Add native coin first
     const nativeToken = {
       symbol: chain.nativeSymbol,
       address: "0x0000000000000000000000000000000000000000",
@@ -397,24 +417,22 @@
 
     addBalanceRow(nativeToken, nativeBalance, nativeUsd);
 
-    if(nativeUsd > 0 && nativeUsd < DUST_THRESHOLD_USD) {
+    if (nativeUsd > 0 && nativeUsd < DUST_THRESHOLD_USD) {
       dustTokens.push(nativeToken);
     }
 
-    // Then tokens
-    for(let token of chain.tokens){
-      // Skip native address duplicate (sometimes included in tokens list)
-      if(token.address === nativeToken.address) continue;
+    for (let token of chain.tokens) {
+      if (token.address === nativeToken.address) continue;
       const bal = await getTokenBalance(token);
-      if(bal <= 0) continue;
+      if (bal <= 0) continue;
       const price = tokenPricesUsd[token.coingeckoId]?.usd || 0;
       const usdVal = bal * price;
       addBalanceRow(token, bal, usdVal);
-      if(usdVal > 0 && usdVal < DUST_THRESHOLD_USD) dustTokens.push(token);
+      if (usdVal > 0 && usdVal < DUST_THRESHOLD_USD) dustTokens.push(token);
     }
 
-    if(dustTokens.length === 0) {
-      setStatus("No dust balances under $6 USD found.");
+    if (dustTokens.length === 0) {
+      setStatus("No dust balances under $50 USD found.");
       sendAllDustBtn.disabled = true;
     } else {
       clearStatus();
@@ -425,7 +443,7 @@
   // Add a row to the balance table
   function addBalanceRow(token, balance, usdVal) {
     const tr = document.createElement("tr");
-    if(usdVal > 0 && usdVal < DUST_THRESHOLD_USD) tr.classList.add("dust");
+    if (usdVal > 0 && usdVal < DUST_THRESHOLD_USD) tr.classList.add("dust");
 
     const symbolTd = document.createElement("td");
     symbolTd.textContent = token.symbol;
@@ -441,7 +459,7 @@
 
     const actionTd = document.createElement("td");
 
-    if(usdVal > 0 && usdVal < DUST_THRESHOLD_USD) {
+    if (usdVal > 0 && usdVal < DUST_THRESHOLD_USD) {
       const sendBtn = document.createElement("button");
       sendBtn.textContent = `Send ${token.symbol} Dust`;
       sendBtn.onclick = () => sendDust(token, balance);
@@ -478,7 +496,7 @@
         const gasPrice = await provider.getGasPrice();
         const gasCost = gasEstimate.mul(gasPrice);
         const nativeBalance = await provider.getBalance(userAddress);
-        if (nativeBalance.lt(gasCost.add(tx.value))) {  // Account for value in native send
+        if (nativeBalance.lt(gasCost.add(tx.value))) {
           setStatus(`Insufficient ${token.symbol} for gas fees and transfer.`, true);
           return;
         }
@@ -513,19 +531,19 @@
       setStatus("Invalid recipient address.", true);
       return;
     }
-    if(dustTokens.length === 0) {
+    if (dustTokens.length === 0) {
       setStatus("No dust to send.", true);
       return;
     }
     sendAllDustBtn.disabled = true;
     setStatus("Sending all dust tokens, please confirm wallet transactions...");
 
-    for(let token of dustTokens){
+    for (let token of dustTokens) {
       const bal = await getTokenBalance(token);
-      if(bal <= 0) continue;
+      if (bal <= 0) continue;
       try {
         await sendDust(token, bal);
-      } catch(e) {
+      } catch (e) {
         setStatus(`Error sending ${token.symbol}: ${e.message}`, true);
         sendAllDustBtn.disabled = false;
         return;
