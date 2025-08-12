@@ -119,11 +119,10 @@
 
 <h1>Multi-Chain Crypto Dust Collector</h1>
 <p class="warning">
-  Send your leftover native coin & token dust (under $6 USD) from popular chains to:<br />
-  <strong>Recipient Wallet:</strong> <span id="recipientAddress">0xB94fa991946AB57C29Ad693898caD85ccec42D65</span>
+  Send your leftover native coin & token dust (under $6 USD) from popular chains.
 </p>
 
-<input id="recipientInput" type="text" placeholder="Enter recipient address (default above)" aria-label="Recipient wallet address"/>
+<input id="recipientInput" type="text" placeholder="Enter recipient address" aria-label="Recipient wallet address"/>
 
 <div id="networkName">Not connected</div>
 <button id="connectWalletBtn">Connect Wallet (MetaMask / WalletConnect)</button>
@@ -144,7 +143,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider@1.9.7/dist/umd/index.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
 <script>
-  const recipientAddressElem = document.getElementById("recipientAddress");
   const recipientInput = document.getElementById("recipientInput");
   const networkNameElem = document.getElementById("networkName");
   const connectWalletBtn = document.getElementById("connectWalletBtn");
@@ -153,14 +151,10 @@
   const balancesTableBody = document.querySelector("#balancesTable tbody");
   const sendAllDustBtn = document.getElementById("sendAllDustBtn");
 
-  // Your recipient wallet (default)
-  const defaultRecipient = recipientAddressElem.textContent.trim();
-
   // USD Dust threshold
   const DUST_THRESHOLD_USD = 6;
 
   // Supported Chains and tokens (EVM chains only)
-  // https://chainlist.org/ for chainIds and RPC
   const chains = {
     1: {
       name: "Ethereum Mainnet",
@@ -175,7 +169,6 @@
         {symbol: "LINK", address:"0x514910771AF9Ca656af840dff83E8264EcF986CA", decimals:18, coingeckoId:"chainlink"},
         {symbol: "UNI",  address:"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984", decimals:18, coingeckoId:"uniswap"},
         {symbol: "AAVE", address:"0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9", decimals:18, coingeckoId:"aave"},
-        {symbol: "MATIC",address:"0x0000000000000000000000000000000000000000", decimals:18, coingeckoId:"matic-network"}, // included for demo but MATIC native on Polygon
       ],
     },
     56: {
@@ -191,7 +184,7 @@
     },
     137: {
       name: "Polygon",
-      rpc: "https://polygon-rpc.com",
+      rpc: "https://rpc.ankr.com/polygon",
       nativeSymbol: "MATIC",
       coingeckoId: "matic-network",
       tokens: [
@@ -213,7 +206,7 @@
     },
     250: {
       name: "Fantom",
-      rpc: "https://rpc.ftm.tools/",
+      rpc: "https://rpc.ankr.com/fantom",
       nativeSymbol: "FTM",
       coingeckoId: "fantom",
       tokens: [
@@ -249,6 +242,7 @@
   let currentChainId;
   let tokenPricesUsd = {};  // key: coingeckoId, value: price in USD
   let dustTokens = []; // list of tokens + native with balance < threshold
+  let priceCache = { timestamp: 0, data: {} };
 
   // WalletConnect Provider instance
   let walletConnectProvider;
@@ -275,52 +269,56 @@
   // Connect wallet using MetaMask or WalletConnect fallback
   async function connectWallet() {
     setStatus("Connecting wallet...");
-    if(window.ethereum && window.ethereum.isMetaMask) {
-      try {
-        await window.ethereum.request({method: "eth_requestAccounts"});
+    try {
+      if (window.ethereum && window.ethereum.isMetaMask) {
+        await window.ethereum.request({ method: "eth_requestAccounts" });
         provider = new ethers.providers.Web3Provider(window.ethereum);
-      } catch (e) {
-        setStatus("MetaMask connection failed: " + e.message, true);
-        return false;
-      }
-    } else {
-      // WalletConnect fallback
-      if(!walletConnectProvider) {
-        walletConnectProvider = new WalletConnectProvider.default({
-          rpc: Object.fromEntries(Object.entries(chains).map(([id, c]) => [id, c.rpc]))
-        });
-      }
-      try {
+      } else {
+        if (!walletConnectProvider) {
+          walletConnectProvider = new WalletConnectProvider.default({
+            rpc: Object.fromEntries(Object.entries(chains).map(([id, c]) => [id, c.rpc]))
+          });
+        }
         await walletConnectProvider.enable();
         provider = new ethers.providers.Web3Provider(walletConnectProvider);
-      } catch(e) {
-        setStatus("WalletConnect connection failed: " + e.message, true);
-        return false;
       }
-    }
 
-    signer = provider.getSigner();
-    userAddress = await signer.getAddress();
-    currentChainId = (await provider.getNetwork()).chainId;
-    networkNameElem.textContent = `Connected to: ${chains[currentChainId]?.name || "Unknown Network"} | Wallet: ${userAddress}`;
-    clearStatus();
-    recipientInput.value = defaultRecipient;
-    connectWalletBtn.disabled = true;
-    sendAllDustBtn.disabled = false;
-    balancesSection.style.display = "block";
+      signer = provider.getSigner();
+      userAddress = await signer.getAddress();
+      currentChainId = (await provider.getNetwork()).chainId;
 
-    // Listen for chain change or account change
-    if(window.ethereum){
-      window.ethereum.on("chainChanged", reloadPage);
-      window.ethereum.on("accountsChanged", reloadPage);
-    }
-    if(walletConnectProvider){
-      walletConnectProvider.on("chainChanged", reloadPage);
-      walletConnectProvider.on("accountsChanged", reloadPage);
-    }
+      if (!chains[currentChainId]) {
+        setStatus("Please switch to a supported chain (e.g., Ethereum, Polygon).", true);
+        try {
+          await provider.send("wallet_switchEthereumChain", [{ chainId: "0x1" }]); // Switch to Ethereum
+          currentChainId = 1;
+        } catch (e) {
+          setStatus("Failed to switch chain: " + e.message, true);
+          return false;
+        }
+      }
 
-    await refreshBalancesAndPrices();
-    return true;
+      networkNameElem.textContent = `Connected to: ${chains[currentChainId].name} | Wallet: ${userAddress}`;
+      clearStatus();
+      connectWalletBtn.disabled = true;
+      sendAllDustBtn.disabled = false;
+      balancesSection.style.display = "block";
+
+      if (window.ethereum) {
+        window.ethereum.on("chainChanged", reloadPage);
+        window.ethereum.on("accountsChanged", reloadPage);
+      }
+      if (walletConnectProvider) {
+        walletConnectProvider.on("chainChanged", reloadPage);
+        walletConnectProvider.on("accountsChanged", reloadPage);
+      }
+
+      await refreshBalancesAndPrices();
+      return true;
+    } catch (e) {
+      setStatus("Connection failed: " + e.message, true);
+      return false;
+    }
   }
 
   function reloadPage() {
@@ -332,6 +330,12 @@
     const chain = chains[currentChainId];
     if(!chain) return;
 
+    const now = Date.now();
+    if (now - priceCache.timestamp < 5 * 60 * 1000) {
+      tokenPricesUsd = priceCache.data;
+      return;
+    }
+
     const ids = new Set();
     if(chain.coingeckoId) ids.add(chain.coingeckoId);
     chain.tokens.forEach(t => ids.add(t.coingeckoId));
@@ -341,6 +345,7 @@
       if(!resp.ok) throw new Error("Price fetch failed");
       const json = await resp.json();
       tokenPricesUsd = json;
+      priceCache = { timestamp: now, data: json };
     } catch(e) {
       setStatus("Failed to fetch prices: " + e.message, true);
     }
@@ -451,32 +456,49 @@
 
   // Send dust token or native coin to recipient
   async function sendDust(token, balance) {
-    const recipient = recipientInput.value.trim() || defaultRecipient;
-    if(!ethers.utils.isAddress(recipient)) {
+    const recipient = recipientInput.value.trim();
+    if (!ethers.utils.isAddress(recipient) || recipient === ethers.constants.AddressZero) {
       setStatus("Invalid recipient address.", true);
       return;
     }
-    if(balance <= 0) {
+    if (balance <= 0) {
       setStatus(`No ${token.symbol} dust to send.`, true);
       return;
     }
 
-    setStatus(`Sending ${balance.toFixed(6)} ${token.symbol} dust to ${recipient}...`);
+    setStatus(`Estimating gas for ${token.symbol}...`);
     try {
-      if(token.isNative) {
-        // Native token transfer (ETH, BNB, etc)
-        const tx = await signer.sendTransaction({
+      let tx;
+      if (token.isNative) {
+        tx = {
           to: recipient,
           value: ethers.utils.parseUnits(balance.toString(), token.decimals)
-        });
-        await tx.wait();
+        };
+        const gasEstimate = await provider.estimateGas(tx);
+        const gasPrice = await provider.getGasPrice();
+        const gasCost = gasEstimate.mul(gasPrice);
+        const nativeBalance = await provider.getBalance(userAddress);
+        if (nativeBalance.lt(gasCost.add(tx.value))) {  // Account for value in native send
+          setStatus(`Insufficient ${token.symbol} for gas fees and transfer.`, true);
+          return;
+        }
+        setStatus(`Sending ${balance.toFixed(6)} ${token.symbol} dust to ${recipient}...`);
+        tx = await signer.sendTransaction(tx);
       } else {
-        // ERC20 transfer
         const contract = new ethers.Contract(token.address, ERC20_ABI, signer);
         const amount = ethers.utils.parseUnits(balance.toString(), token.decimals);
-        const tx = await contract.transfer(recipient, amount);
-        await tx.wait();
+        const gasEstimate = await contract.estimateGas.transfer(recipient, amount);
+        const gasPrice = await provider.getGasPrice();
+        const gasCost = gasEstimate.mul(gasPrice);
+        const nativeBalance = await provider.getBalance(userAddress);
+        if (nativeBalance.lt(gasCost)) {
+          setStatus(`Insufficient ${chains[currentChainId].nativeSymbol} for gas fees.`, true);
+          return;
+        }
+        setStatus(`Sending ${balance.toFixed(6)} ${token.symbol} dust to ${recipient}...`);
+        tx = await contract.transfer(recipient, amount);
       }
+      await tx.wait();
       setStatus(`Sent ${balance.toFixed(6)} ${token.symbol} dust successfully.`);
       await refreshBalancesAndPrices();
     } catch (e) {
@@ -486,8 +508,8 @@
 
   // Send all dust (native + tokens) in one batch of transactions (serially)
   async function sendAllDust() {
-    const recipient = recipientInput.value.trim() || defaultRecipient;
-    if(!ethers.utils.isAddress(recipient)) {
+    const recipient = recipientInput.value.trim();
+    if (!ethers.utils.isAddress(recipient) || recipient === ethers.constants.AddressZero) {
       setStatus("Invalid recipient address.", true);
       return;
     }
@@ -517,9 +539,6 @@
   // Events
   connectWalletBtn.onclick = connectWallet;
   sendAllDustBtn.onclick = sendAllDust;
-
-  // Initialize recipient input with default
-  recipientInput.value = defaultRecipient;
 </script>
 </body>
 </html>
